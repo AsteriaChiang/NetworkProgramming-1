@@ -1,6 +1,8 @@
 package com.example.email.controller;
 
 
+import com.example.email.model.ResultModel;
+import com.example.email.util.ResultTools;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -8,7 +10,6 @@ import org.springframework.web.bind.annotation.RestController;
 import javax.servlet.http.HttpServletRequest;
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
-import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.Socket;
 import java.util.Base64;
@@ -18,12 +19,23 @@ import java.util.Base64;
 public class SmtpController {
 
     @GetMapping(value = "/sendEmail")
-    public String sendEmail(HttpServletRequest request) {
-        String mailServer = request.getParameter("mailServer");
+    public ResultModel sendEmail(HttpServletRequest request) {
         String recipient = request.getParameter("recipient");
         String userMail = request.getParameter("userMail");
         String userPwd = request.getParameter("userPwd");
+        String mailSubject=request.getParameter("mailSubject");
+        String mailContent=request.getParameter("mailContent");
 
+        if(userMail == null || userPwd == null || recipient==null){
+            return ResultTools.result(2001, "", null);
+        }
+
+        return emailProgress(recipient,userMail,userPwd,mailSubject,mailContent);
+    }
+
+    //发送邮件
+    public ResultModel emailProgress(String recipient,String userMail,String userPwd,String mailSubject,String mailContent){
+        String mailServer = "smtp." + recipient.substring(recipient.lastIndexOf("@") + 1);
         try{
             Socket client = new Socket(mailServer, 25);
             //IO流
@@ -31,7 +43,7 @@ public class SmtpController {
             DataOutputStream out = new DataOutputStream(client.getOutputStream());
 
             in.readLine();
-            send(in,out,"HELO theWorld");
+            send(in,out,"HELO smtp");
             in.readLine();
             in.readLine();
             send(in,out,"auth login");
@@ -44,7 +56,10 @@ public class SmtpController {
             send(in,out,"RCPT TO: <"+userMail+">");
             //DATA
             send(in,out,"DATA");
-            send(out, "this is a program for sending e-mail,coding with java socket!");
+            if(mailSubject!=null){
+                send(out, "Subject: "+mailSubject);
+            }
+            send(out, mailContent);
             send(out, ".");
             send(out,"QUIT");
             client.close();
@@ -53,7 +68,7 @@ public class SmtpController {
             e.printStackTrace();
         }
 
-        return "success";
+        return ResultTools.result(200, "", null);
     }
 
     public void send(DataOutputStream out, String s){

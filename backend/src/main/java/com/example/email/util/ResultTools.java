@@ -13,6 +13,7 @@ public class ResultTools {
      * 1004-----长传文件为空
      * 404------异常抛出错误
      *
+     * 2001-----用户未初始化
      */
 
     /**
@@ -43,9 +44,13 @@ public class ResultTools {
             case 1004:
                 model.setErrmsg("上传文件为空");
                 break;
+            case 2001:
+                model.setErrmsg("用户未初始化");
+                break;
             case 404:
                 model.setErrmsg(Errmsg);
                 break;
+
             default:
                 model.setErrmsg("未知错误");
                 break;

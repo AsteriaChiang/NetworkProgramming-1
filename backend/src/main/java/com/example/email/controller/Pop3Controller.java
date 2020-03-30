@@ -6,15 +6,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.UnsupportedEncodingException;
+import java.io.*;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.StringTokenizer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 @RestController
@@ -24,13 +21,16 @@ public class Pop3Controller {
     private Socket socket = null;
     private BufferedReader in = null;
     private BufferedWriter out = null;
-    private boolean debug=true;
+    private String userMail = null;
+    private String userPwd = null;
+    private String mailServer = null;
 
     @RequestMapping(value = "/auth")
     public ResultModel authUser(HttpServletRequest request){
-        String mailServer = request.getParameter("mailServer");
-        String userMail = request.getParameter("userMail");
-        String userPwd = request.getParameter("userPwd");
+
+        userMail = request.getParameter("userMail");
+        userPwd = request.getParameter("userPwd");
+        mailServer = "pop." + userMail.substring(userMail.lastIndexOf("@") + 1);
 
         //建立连接
         try{
@@ -40,20 +40,15 @@ public class Pop3Controller {
         }
         System.out.println("建立连接！");
         try{
-            BufferedReader in=new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            BufferedWriter out=new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
+            in=new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out=new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
 
-            if(user(userMail,in,out))
-                System.out.println("user 命令执行完毕！");
-            else
+            if(!user(userMail,in,out))
                 return ResultTools.result(404, "用户名错误", null);
 
-            if(pass(userPwd,in,out))
-                System.out.println("pass 命令执行完毕！");
-            else
+            if(!pass(userPwd,in,out))
                 return ResultTools.result(404, "密码错误", null);
 
-            System.out.println("pass 命令执行完毕！");
         }catch (IOException e){
             return ResultTools.result(404, e.getMessage(), null);
         }
@@ -80,7 +75,7 @@ public class Pop3Controller {
             System.out.println("retr 命令执行完毕！");
             quit(in,out);
             System.out.println("quit 命令执行完毕！");
-        }catch(Exception e){
+        }catch(IOException e){
             return ResultTools.result(404, e.getMessage(), null);
         }
         return ResultTools.result(200, "", null);
@@ -101,7 +96,6 @@ public class Pop3Controller {
             System.out.println(e.getMessage());
         }
 
-        //检查user命令是否成功
         if(!"+OK".equals(result)){
             System.out.println("删除失败！");
             return ResultTools.result(404, "删除失败！", null);
@@ -115,9 +109,8 @@ public class Pop3Controller {
         String line="";
         try{
             line=in.readLine();
-            if(debug){
-                System.out.println("服务器返回状态:"+line);
-            }
+            System.out.println("服务器返回状态:"+line);
+
         }catch(Exception e){
             System.out.println(e.getMessage());
         }
@@ -138,10 +131,8 @@ public class Pop3Controller {
         out.write(str);//发送命令
         out.newLine();//发送空行
         out.flush();//清空缓冲区
-        if(debug){
-            System.out.println("已发送命令:"+str);
-        }
-       return getReturn(in);
+        System.out.println("已发送命令:"+str);
+        return getReturn(in);
     }
 
     //user命令
@@ -190,7 +181,9 @@ public class Pop3Controller {
 
     //stat命令
     //请求服务器发回关于邮箱的统计资料，如邮件总数和总字节数
-    public int stat(BufferedReader in,BufferedWriter out) throws IOException{
+    public int stat(BufferedReader in,BufferedWriter out)throws IOException{
+        if(socket.isClosed())
+            System.out.println("已断开连接");
         String line = sendServer("stat",in,out);
         StringTokenizer st = new StringTokenizer(line," ");
         String result = st.nextToken();
@@ -202,6 +195,7 @@ public class Pop3Controller {
         }
         System.out.println("共有邮件"+mailNum+"封");
         return mailNum;
+
     }
 
     //无参数list命令
@@ -217,6 +211,23 @@ public class Pop3Controller {
     //retr命令
     //得到邮件的完整信息
     public void retr(int mailNum,BufferedReader in,BufferedWriter out){
+        if(socket.isClosed()){
+            try{
+                socket = new Socket(mailServer,110);//在新建socket的时候就已经与服务器建立了连接
+            }catch(Exception e){
+                System.out.println(e.getMessage());
+            }
+            try{
+                in=new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                out=new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
+
+                user(userMail,in,out);
+                pass(userPwd,in,out);
+
+            }catch (IOException e){
+                System.out.println(e.getMessage());
+            }
+        }
         String result = null;
         try{
             result = getResult(sendServer("retr "+ mailNum, in, out));
@@ -227,10 +238,36 @@ public class Pop3Controller {
             System.out.println("接收邮件出错！");
         }
         System.out.println("第" + mailNum + "封");
+        StringBuffer emailContent = null;
 
         //解析邮件内容
+        StringBuilder receive=new StringBuilder();
+        String tempStr;
+        try {
+            while(true)
+            {
+                tempStr = in.readLine();
+                receive.append("\r\n");
+                receive.append(tempStr);
+                if(tempStr.equals("."))
+                {
+                    break;
+                }
+            }
+        }catch (IOException e){
+            System.out.println(e.getMessage());
+        }
+
+        // /s:匹配任何空白字符，包括空格、制表符、换页符等。
+        // [\s\S]*:匹配任意字符包括换行符
+        String from,to,subject,type,subtype,flag;
+        Pattern pattern = Pattern.compile("From:[\\s\\S]*<([\\s\\S]*)>/r/n");
+        Matcher matcher = pattern.matcher(receive);
+        if (matcher.find())
+            System.out.println("from:"+matcher.group(1));
 
     }
+
 
     //退出
     public void quit(BufferedReader in,BufferedWriter out) throws IOException{
@@ -242,6 +279,55 @@ public class Pop3Controller {
         }
         if(!"+OK".equals(result)){
             throw new IOException("未能正确退出");
+        }
+        if (in != null) {
+            try {
+                in.close();
+            } catch (IOException e) {
+            }
+        }
+        if (out != null) {
+            try {
+                out.close();
+            } catch (IOException e) {
+            }
+        }
+        if (socket != null) {
+            try {
+                socket.close();
+            } catch (IOException e) {
+            }
+        }
+    }
+
+    @RequestMapping(value = "/saveFile")
+    public static synchronized boolean SaveFile(byte[] Data, String Path, String FileName) {
+        File saveFile = new File(Path, FileName);
+        try {
+            saveFile.createNewFile();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        FileOutputStream fileOutputStream = null;
+        try {
+            fileOutputStream = new FileOutputStream(saveFile);
+            fileOutputStream.write(Data);
+            fileOutputStream.flush();
+            return true;
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+            return false;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        } finally {
+            if (fileOutputStream != null) {
+                try {
+                    fileOutputStream.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
         }
     }
 }

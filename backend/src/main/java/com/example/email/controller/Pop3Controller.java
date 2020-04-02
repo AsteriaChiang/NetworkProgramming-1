@@ -9,7 +9,7 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.*;
 import java.net.Socket;
 import java.net.UnknownHostException;
-import java.util.StringTokenizer;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -229,6 +229,7 @@ public class Pop3Controller {
             }
         }
         String result = null;
+        List<String> content = new ArrayList<>();
         try{
             result = getResult(sendServer("retr "+ mailNum, in, out));
         }catch (IOException e){
@@ -241,33 +242,129 @@ public class Pop3Controller {
         StringBuffer emailContent = null;
 
         //解析邮件内容
-        StringBuilder receive=new StringBuilder();
+        //StringBuilder receive=new StringBuilder();
         String tempStr;
         try {
             while(true)
             {
                 tempStr = in.readLine();
-                receive.append("\r\n");
-                receive.append(tempStr);
+                //receive.append("\r\n");
+                //receive.append(tempStr);
+                content.add(tempStr);
                 if(tempStr.equals("."))
                 {
                     break;
                 }
             }
+            if(content!=null){
+                handleContent(content);
+            }
         }catch (IOException e){
             System.out.println(e.getMessage());
         }
 
-        // /s:匹配任何空白字符，包括空格、制表符、换页符等。
-        // [\s\S]*:匹配任意字符包括换行符
-        String from,to,subject,type,subtype,flag;
-        Pattern pattern = Pattern.compile("From:[\\s\\S]*<([\\s\\S]*)>/r/n");
-        Matcher matcher = pattern.matcher(receive);
-        if (matcher.find())
-            System.out.println("from:"+matcher.group(1));
 
     }
 
+
+    public void handleContent(List<String> content) {
+        //决定当前行是否解码
+        boolean decodeWithBase64 = false;
+        //排除前一行的干扰
+        boolean isPreLine = false;
+        //是否已经收集完内容  不要html
+        boolean isBody = false;
+        boolean hasContent = false;
+        HashMap<String, String> email = new HashMap<>();
+        for (int i = 0; i < content.size(); i++) {
+            String buf = content.get(i);
+            isPreLine = false;
+            if (buf.startsWith("Subject:")) {
+                String subject = convertToChinese(buf);
+                //如果是英文，从Subject:后开始截取即可
+                if (buf.equals("")) subject = buf.substring(8);
+                email.put("subject", subject);
+            } else if (buf.startsWith("From:")) {
+                String from = convertToChinese(buf);
+                //如果是英文，从Subject:后开始截取即可
+                if (buf.equals("")){
+                    from = buf.substring(5);
+                } else {
+                    String regex = "<(.*)>";
+                    Pattern p = Pattern.compile(regex);
+                    Matcher m = p.matcher(buf);
+                    if (m.find())
+                        from += m.group(1);
+                }
+                email.put("from", from);
+            }else if (buf.startsWith("To:")) {
+                String to = convertToChinese(buf);
+                if (buf.equals("")){
+                    to = buf.substring(3);
+                } else {
+                    String regex = "<(.*)>";
+                    Pattern p = Pattern.compile(regex);
+                    Matcher m = p.matcher(buf);
+                    if (m.find())
+                        to += m.group(1);
+                }
+                email.put("to", to);
+            } else if (buf.startsWith("Date:")) {
+                email.put("date", buf.substring(5));
+            } else if (buf.startsWith("Content-Type:")) {
+                //Content-Type: text/plain; charset=UTF-8
+                //要根据Content-Type来提取这一段的内容
+                String regex1 = ": (.*);";
+                Pattern p1 = Pattern.compile(regex1);
+                Matcher m1 = p1.matcher(buf);
+                if (m1.find())
+                    email.put("content-type", m1.group(1));
+                String regex2 = "charset=(.*)";
+                Pattern p2 = Pattern.compile(regex2);
+                Matcher m2 = p2.matcher(buf);
+                if(m2.find())
+                    email.put("content-type", m2.group(1));
+            }
+
+        }
+    }
+
+
+    /*
+          =?gbk?B?和?=之间的内容为真实标题内容
+          先将Base64转换成字节，然后再转换成GBK字符串
+          =?UTF-8?B?
+    */
+    public String convertToChinese(String s){
+        String result = "";
+        boolean isGBK = false;
+        boolean isUTF8 = false;
+        // . 匹配除换行符 \n 之外的任何单字符
+        String regex1 = "=\\?GBK\\?B\\?(.*)\\?=";
+        String regex2 = "=\\?UTF-8\\?B\\?(.*)\\?=";
+        Pattern p1 = Pattern.compile(regex1);
+        Pattern p2 = Pattern.compile(regex2);
+        Matcher m1 = p1.matcher(s);
+        Matcher m2 = p2.matcher(s);
+        if (m1.find()) {
+            isGBK = true;
+            try{
+                byte[] b = Base64.getDecoder().decode(m1.group(1));
+                result = new String(b, "GBK");
+            }catch (UnsupportedEncodingException e){
+                System.out.println(e.getMessage());
+            }
+        }else if(m2.find()){
+            isUTF8 = true;
+            try{
+                byte[] b = Base64.getDecoder().decode(m1.group(1));
+                result = new String(b, "UTF-8");
+            }catch (UnsupportedEncodingException e){
+                System.out.println(e.getMessage());
+            }
+        }
+        return result;
+    }
 
     //退出
     public void quit(BufferedReader in,BufferedWriter out) throws IOException{

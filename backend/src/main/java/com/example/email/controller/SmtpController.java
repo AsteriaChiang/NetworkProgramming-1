@@ -8,9 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
-import java.io.BufferedReader;
-import java.io.DataOutputStream;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.Socket;
 import java.util.Base64;
 
@@ -56,10 +54,40 @@ public class SmtpController {
             send(in,out,"RCPT TO: <"+userMail+">");
             //DATA
             send(in,out,"DATA");
-            if(mailSubject!=null){
-                send(out, "Subject: "+mailSubject);
-            }
+            send(out, "Subject: "+mailSubject);
+            send(out,"Content-Type: multipart/mixed; boundary=b");
+            //Text
+            send(out,"--b");
+            send(out,"Content-Type:text/html");
             send(out, mailContent);
+            send(out,"--b");
+
+            //attachment
+            File file = new File("/Users/asteriachiang/Desktop/test.docx");
+            InputStream attachmentStream=new FileInputStream(file);
+            byte[] bs = null;
+            if (null != attachmentStream) {
+                int buffSize = 1024;
+                byte[] buff = new byte[buffSize];
+                byte[] temp;
+                bs = new byte[0];
+                int readTotal = 0;
+                while (-1 != (readTotal = attachmentStream.read(buff))) {
+                    temp = new byte[bs.length];
+                    System.arraycopy(bs, 0, temp, 0, bs.length);
+                    bs = new byte[temp.length + readTotal];
+                    System.arraycopy(temp, 0, bs, 0, temp.length);
+                    System.arraycopy(buff, 0, bs, temp.length, readTotal);
+                }
+            }
+            String filename=file.getName();
+            send(out,"Content--Type: application/msword; name=\""+filename+"\"");
+            send(out,"Content-Disposition: attachment; filename=\""+filename+"\"");
+            send(out,"Content-Transfer-Encoding: base64");
+            send(out,"\r\n");
+            send(out,new String(encoder.encode(bs)));
+            send(out,"--b");
+
             send(out, ".");
             send(out,"QUIT");
             client.close();

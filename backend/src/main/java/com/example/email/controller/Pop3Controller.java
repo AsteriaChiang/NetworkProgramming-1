@@ -2,6 +2,8 @@ package com.example.email.controller;
 
 import com.example.email.model.ResultModel;
 import com.example.email.util.ResultTools;
+import com.example.email.util.QuotedPrintable;
+import org.apache.catalina.valves.rewrite.QuotedStringTokenizer;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -24,6 +26,10 @@ public class Pop3Controller {
     private String userMail = null;
     private String userPwd = null;
     private String mailServer = null;
+    private boolean isGBK = false;
+    private boolean isUTF8 = false;
+    private boolean isBase64 = false;
+    private boolean isQP = false;
 
     @RequestMapping(value = "/auth")
     public ResultModel authUser(HttpServletRequest request){
@@ -253,6 +259,7 @@ public class Pop3Controller {
                 content.add(tempStr);
                 if(tempStr.equals("."))
                 {
+                    System.out.println(content);
                     break;
                 }
             }
@@ -275,19 +282,47 @@ public class Pop3Controller {
         //是否已经收集完内容  不要html
         boolean isBody = false;
         boolean hasContent = false;
+        String body = "";
+        String rawBody = "";
+        String contentType = "";
         HashMap<String, String> email = new HashMap<>();
         for (int i = 0; i < content.size(); i++) {
+
             String buf = content.get(i);
-            isPreLine = false;
-            if (buf.startsWith("Subject:")) {
+            if(isBody){
+                if(buf.equals(".")||buf.length()==0) {
+                    //根据content type解析body
+                    System.out.println("rawbody:"+rawBody);
+                    rawBody.replaceAll("(\\n|\\r\\n|\\n\\r)","");
+                    if(contentType.equals("multipart/alternative")){
+
+                    }else if(contentType.equals("multipart/mixed")){
+
+                    }else if(contentType.equals("multipart/related")){
+
+                    } else if(contentType.equals("text/html")){
+                        body += convert(rawBody);
+                    }else if(contentType.equals("text/xml")){
+                        body += convert(rawBody);
+                    }else if(contentType.equals("text/plain")){
+                        body += convert(rawBody);
+                    }
+                    isBody = false;
+                    continue;
+                }
+                System.out.println("buf:"+buf);
+                rawBody += buf;
+                System.out.println("rawbody:"+rawBody);
+
+            } else if (buf.startsWith("Subject:")) {
                 String subject = convertToChinese(buf);
                 //如果是英文，从Subject:后开始截取即可
-                if (buf.equals("")) subject = buf.substring(8);
-                email.put("subject", subject);
+                if (subject==null) subject = buf.substring(8);
+                email.put("subject:", subject);
+                System.out.println("subject:"+subject);
             } else if (buf.startsWith("From:")) {
                 String from = convertToChinese(buf);
-                //如果是英文，从Subject:后开始截取即可
-                if (buf.equals("")){
+                if (from==null){
                     from = buf.substring(5);
                 } else {
                     String regex = "<(.*)>";
@@ -296,37 +331,39 @@ public class Pop3Controller {
                     if (m.find())
                         from += m.group(1);
                 }
-                email.put("from", from);
-            }else if (buf.startsWith("To:")) {
-                String to = convertToChinese(buf);
-                if (buf.equals("")){
-                    to = buf.substring(3);
-                } else {
-                    String regex = "<(.*)>";
-                    Pattern p = Pattern.compile(regex);
-                    Matcher m = p.matcher(buf);
-                    if (m.find())
-                        to += m.group(1);
-                }
-                email.put("to", to);
-            } else if (buf.startsWith("Date:")) {
+                email.put("from:", from);
+                System.out.println("from:"+from);
+            }else if (buf.startsWith("Date:")) {
                 email.put("date", buf.substring(5));
+                System.out.println("date:"+buf.substring(5));
             } else if (buf.startsWith("Content-Type:")) {
                 //Content-Type: text/plain; charset=UTF-8
                 //要根据Content-Type来提取这一段的内容
+                String emailBody = null;
+                String charset = null;
+                String encoding = null;
                 String regex1 = ": (.*);";
                 Pattern p1 = Pattern.compile(regex1);
                 Matcher m1 = p1.matcher(buf);
                 if (m1.find())
-                    email.put("content-type", m1.group(1));
+                    email.put("content-type", contentType = m1.group(1));
                 String regex2 = "charset=(.*)";
                 Pattern p2 = Pattern.compile(regex2);
                 Matcher m2 = p2.matcher(buf);
                 if(m2.find())
-                    email.put("content-type", m2.group(1));
+                    charset = m2.group(1);
+                System.out.println("content-type:"+contentType);
+
+            }else if(buf.length()==0){
+                //如果这是一个空行
+                System.out.println("邮件内容开始");
+                isBody = true;
+                continue;
             }
 
         }
+        email.put("body:", body);
+        System.out.println("邮件内容：" + body);
     }
 
 
@@ -336,32 +373,103 @@ public class Pop3Controller {
           =?UTF-8?B?
     */
     public String convertToChinese(String s){
-        String result = "";
-        boolean isGBK = false;
-        boolean isUTF8 = false;
+        String result = null;
+        //boolean isGBK = false;
+        //boolean isUTF8 = false;
         // . 匹配除换行符 \n 之外的任何单字符
-        String regex1 = "=\\?GBK\\?B\\?(.*)\\?=";
-        String regex2 = "=\\?UTF-8\\?B\\?(.*)\\?=";
+        //Quoted-printabel
+        //String regex1 = "=\\?(GBK|UTF-8)\\?(B|Q)\\?(.*)\\?=";
+        //String regex2 = "=\\?UTF-8\\?B\\?(.*)\\?=";
+        //String regex3 = "=\\?GBK\\?Q\\?(.*)\\?=";
+        //String regex4 = "=\\?UTF-8\\?Q\\?(.*)\\?=";
+        //Pattern p1 = Pattern.compile(regex1);
+        //Pattern p2 = Pattern.compile(regex2);
+        //Pattern p3 = Pattern.compile(regex3);
+        //Pattern p4 = Pattern.compile(regex4);
+        //Matcher m1 = p1.matcher(s);
+        //Matcher m2 = p2.matcher(s);
+
+        if(s.contains("GBK")){
+            isGBK = true;
+            isUTF8 = false;
+        }
+
+        if(s.contains("UTF-8")){
+            isGBK = false;
+            isUTF8 = true;
+        }
+
+
+        String regex1 = "\\?B\\?(.*)\\?=";
+        String regex2 = "\\?Q\\?(.*)\\?=";
         Pattern p1 = Pattern.compile(regex1);
         Pattern p2 = Pattern.compile(regex2);
         Matcher m1 = p1.matcher(s);
         Matcher m2 = p2.matcher(s);
-        if (m1.find()) {
-            isGBK = true;
-            try{
-                byte[] b = Base64.getDecoder().decode(m1.group(1));
-                result = new String(b, "GBK");
-            }catch (UnsupportedEncodingException e){
-                System.out.println(e.getMessage());
+
+        if (isGBK) {
+            //=?GBK=?B?=
+            if(m1.find()){
+                isBase64 = true;
+                try{
+                    byte[] b = Base64.getDecoder().decode(m1.group(1));
+                    result = new String(b, "GBK");
+                }catch (UnsupportedEncodingException e){
+                    System.out.println(e.getMessage());
+                }
+            }else if(m2.find()){
+                isQP = true;
+                result = QuotedPrintable.decode(m2.group(1).getBytes(),"GBK");
             }
-        }else if(m2.find()){
-            isUTF8 = true;
-            try{
-                byte[] b = Base64.getDecoder().decode(m1.group(1));
-                result = new String(b, "UTF-8");
-            }catch (UnsupportedEncodingException e){
-                System.out.println(e.getMessage());
+
+        }else if(isUTF8){
+            if(m1.find()){
+                isBase64 = true;
+                try{
+                    byte[] b = Base64.getDecoder().decode(m1.group(1));
+                    result = new String(b, "UTF-8");
+                }catch (UnsupportedEncodingException e){
+                    System.out.println(e.getMessage());
+                }
+            }else if(m2.find()){
+                isQP = true;
+                result = QuotedPrintable.decode(m2.group(1).getBytes(),"UTF-8");
             }
+        }
+        System.out.println(result);
+        return result;
+    }
+
+    public String convert(String s){
+        String result = "";
+        if(isGBK){
+            if(isBase64){
+                try{
+                    byte[] b = Base64.getDecoder().decode(s);
+                    result = new String(b, "GBK");
+                }catch (UnsupportedEncodingException e){
+                    System.out.println(e.getMessage());
+                }
+            }else if(isQP){
+                result = QuotedPrintable.decode(s.getBytes(),"GBK");
+            }else{
+                System.out.println("未知或者不是base64和qp！");
+            }
+        }else if(isUTF8){
+            if(isBase64){
+                try{
+                    byte[] b = Base64.getDecoder().decode(s);
+                    result = new String(b, "UTF-8");
+                }catch (UnsupportedEncodingException e){
+                    System.out.println(e.getMessage());
+                }
+            }else if(isQP){
+                result = QuotedPrintable.decode(s.getBytes(),"UTF-8");
+            }else{
+                System.out.println("未知或者不是base64和qp！");
+            }
+        }else{
+            System.out.println("未知或者不是gbk和utf8！");
         }
         return result;
     }

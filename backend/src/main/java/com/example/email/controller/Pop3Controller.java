@@ -281,38 +281,95 @@ public class Pop3Controller {
         boolean isPreLine = false;
         //是否已经收集完内容  不要html
         boolean isBody = false;
+        boolean isPart = false;
         boolean hasContent = false;
         String body = "";
         String rawBody = "";
         String contentType = "";
+        String boundary = "";
         HashMap<String, String> email = new HashMap<>();
         for (int i = 0; i < content.size(); i++) {
 
             String buf = content.get(i);
             if(isBody){
-                if(buf.equals(".")||buf.length()==0) {
-                    //根据content type解析body
-                    System.out.println("rawbody:"+rawBody);
-                    rawBody.replaceAll("(\\n|\\r\\n|\\n\\r)","");
-                    if(contentType.equals("multipart/alternative")){
-
-                    }else if(contentType.equals("multipart/mixed")){
-
-                    }else if(contentType.equals("multipart/related")){
-
-                    } else if(contentType.equals("text/html")){
-                        body += convert(rawBody);
-                    }else if(contentType.equals("text/xml")){
-                        body += convert(rawBody);
-                    }else if(contentType.equals("text/plain")){
-                        body += convert(rawBody);
+                //如果是text类型
+                if(boundary.length()==0){
+                    if(buf.equals(".")){
+                        rawBody.replaceAll("(\\n|\\r\\n|\\n\\r)","");
+                        body = convert(rawBody);
+                        System.out.println("bofy:"+body);
+                        isPart = false;
+                        isBody = false;
+                        return;
+                    }else{
+                        rawBody += buf;
+                        continue;
                     }
-                    isBody = false;
-                    continue;
+
+
+                }else{
+                    //内容开头
+                    if(!isPart&&!buf.equals("--"+boundary)){
+                        continue;
+                    }
+                    isPart = true;
+                    i++;
+                    String type = "";
+                    String charset = "";
+                    String encoding = "";
+                    buf = content.get(i);
+                    String regex = ": (.*); charset=(.*)";
+                    Pattern p = Pattern.compile(regex);
+                    Matcher m = p.matcher(buf);
+                    if (m.find()) {
+                        type = m.group(1);
+                        charset = m.group(2);
+                        System.out.println("type:"+type+";charset:"+charset);
+                    }
+                    String regex1 = "Content-Transfer-Encoding: (.*)";
+                    Pattern p1 = Pattern.compile(regex1);
+                    Matcher m1 = p1.matcher(content.get(++i));
+                    if(m1.find()){
+                        encoding = m1.group(1);
+                        System.out.println("encoding:"+encoding);
+                        if(encoding.equals("base64")){
+                            isBase64 = true;
+                            isQP= false;
+                        }else {
+                            isBase64 = false;
+                            isQP = true;
+                        }
+
+                    }
+                    String part = "";
+                    while(buf.length()!=0){
+                        i++;
+                        buf = content.get(i);
+                    }
+                    i++;
+                    buf = content.get(i);  //这部分内容的第一行
+                    System.out.println("the first line:"+buf);
+                    while(!buf.contains(boundary)){
+                        part += buf;
+                        i++;
+                        buf = content.get(i);
+                    }
+                    isPart = false;
+                    part.replaceAll("(\\n|\\r\\n|\\n\\r)","");
+                    System.out.println(part);
+                    System.out.println(convert(part));
+                    body += convert(part);
+                    if(buf.equals("--"+boundary+"--")){
+                        //结束
+                        return;
+                    }else{
+                        i--;
+                    }
+
                 }
-                System.out.println("buf:"+buf);
-                rawBody += buf;
-                System.out.println("rawbody:"+rawBody);
+
+                //System.out.println("buf:"+buf);
+                //System.out.println("rawbody:"+rawBody);
 
             } else if (buf.startsWith("Subject:")) {
                 String subject = convertToChinese(buf);
@@ -340,19 +397,29 @@ public class Pop3Controller {
                 //Content-Type: text/plain; charset=UTF-8
                 //要根据Content-Type来提取这一段的内容
                 String emailBody = null;
-                String charset = null;
+                //String charset = null;
                 String encoding = null;
                 String regex1 = ": (.*);";
                 Pattern p1 = Pattern.compile(regex1);
                 Matcher m1 = p1.matcher(buf);
                 if (m1.find())
                     email.put("content-type", contentType = m1.group(1));
-                String regex2 = "charset=(.*)";
-                Pattern p2 = Pattern.compile(regex2);
-                Matcher m2 = p2.matcher(buf);
-                if(m2.find())
-                    charset = m2.group(1);
                 System.out.println("content-type:"+contentType);
+                //如果是multipart类型，提取boundary
+                if(contentType.contains("multipart")){
+                    String regex = "(?<=\").*?(?=\")";
+                    Pattern p = Pattern.compile(regex);
+                    Matcher m = p.matcher(buf);
+                    if(m.find()){
+                        boundary = m.group(0);
+                    } else{
+                        buf = content.get(++i);
+                        m = p.matcher(buf);
+                        if(m.find())
+                            boundary = m.group(0);
+                    }
+                    System.out.println("boundary:"+boundary);
+                }
 
             }else if(buf.length()==0){
                 //如果这是一个空行

@@ -274,6 +274,7 @@ public class Pop3Controller {
     }
 
 
+
     public void handleContent(List<String> content) {
         //决定当前行是否解码
         boolean decodeWithBase64 = false;
@@ -297,6 +298,10 @@ public class Pop3Controller {
                     if(buf.equals(".")){
                         rawBody.replaceAll("(\\n|\\r\\n|\\n\\r)","");
                         body = convert(rawBody);
+                        if(contentType.contains("html")){
+                            body = body.replaceAll("</?[^>]+>", "");
+                        }
+
                         System.out.println("bofy:"+body);
                         isPart = false;
                         isBody = false;
@@ -308,15 +313,18 @@ public class Pop3Controller {
 
 
                 }else{
-                    //内容开头
-                    if(!isPart&&!buf.equals("--"+boundary)){
+
+                    if(buf.equals("--"+boundary)){
+                        isPart = true;
+                    }else if(isPart!=true){
                         continue;
                     }
-                    isPart = true;
-                    i++;
+
                     String type = "";
                     String charset = "";
                     String encoding = "";
+                    String part = "";
+                    i++;
                     buf = content.get(i);
                     String regex = ": (.*); charset=(.*)";
                     Pattern p = Pattern.compile(regex);
@@ -328,7 +336,9 @@ public class Pop3Controller {
                     }
                     String regex1 = "Content-Transfer-Encoding: (.*)";
                     Pattern p1 = Pattern.compile(regex1);
-                    Matcher m1 = p1.matcher(content.get(++i));
+                    i++;
+                    buf = content.get(i);
+                    Matcher m1 = p1.matcher(buf);
                     if(m1.find()){
                         encoding = m1.group(1);
                         System.out.println("encoding:"+encoding);
@@ -341,30 +351,49 @@ public class Pop3Controller {
                         }
 
                     }
-                    String part = "";
-                    while(buf.length()!=0){
-                        i++;
-                        buf = content.get(i);
+                    //包含附件
+                    if(contentType.contains("mixed")){
+
+                        if(type.contains("octet-stream")){
+                            //附件
+                        }else{
+
+                        }
+                    }else if(contentType.contains("alternative")){
+                        //包含超文本，只需提取纯文本
+                        if(type.contains("plain")){
+
+                            while(buf.length()!=0){
+                                i++;
+                                buf = content.get(i);
+                            }
+                            i++;
+                            buf = content.get(i);  //这部分内容的第一行
+                            System.out.println("the first line:"+buf);
+
+                            while(!buf.contains(boundary)){
+                                part += buf;
+                                i++;
+                                buf = content.get(i);
+                            }
+                            isPart = false;
+                            part.replaceAll("(\\n|\\r\\n|\\n\\r)","");
+                            System.out.println(part);
+                            part = convert(part);
+                            body += part;
+                            System.out.println(part);
+
+                        }else{
+                            return;
+                        }
+
+
+                    }else if(contentType.contains("related")){
+                        //包含内嵌资源
                     }
-                    i++;
-                    buf = content.get(i);  //这部分内容的第一行
-                    System.out.println("the first line:"+buf);
-                    while(!buf.contains(boundary)){
-                        part += buf;
-                        i++;
-                        buf = content.get(i);
-                    }
-                    isPart = false;
-                    part.replaceAll("(\\n|\\r\\n|\\n\\r)","");
-                    System.out.println(part);
-                    System.out.println(convert(part));
-                    body += convert(part);
-                    if(buf.equals("--"+boundary+"--")){
-                        //结束
-                        return;
-                    }else{
-                        i--;
-                    }
+
+
+
 
                 }
 

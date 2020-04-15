@@ -1,6 +1,8 @@
 package com.example.email.controller;
 
+import com.example.email.model.EmailInfo;
 import com.example.email.model.ResultModel;
+import com.example.email.model.SubContentInfo;
 import com.example.email.util.ResultTools;
 import com.example.email.util.QuotedPrintable;
 import org.apache.catalina.valves.rewrite.QuotedStringTokenizer;
@@ -26,10 +28,8 @@ public class Pop3Controller {
     private String userMail = null;
     private String userPwd = null;
     private String mailServer = null;
-    private boolean isGBK = false;
-    private boolean isUTF8 = false;
-    private boolean isBase64 = false;
-    private boolean isQP = false;
+    private String charset = "";
+    private String encoding = "";
 
     @RequestMapping(value = "/auth")
     public ResultModel authUser(HttpServletRequest request){
@@ -71,8 +71,8 @@ public class Pop3Controller {
         try {
             mailNum = stat(in,out);
             System.out.println("stat 命令执行完毕！");
-            list(in,out);
-            System.out.println("list 命令执行完毕！");
+            //list(in,out);
+            //System.out.println("list 命令执行完毕！");
             //获取全部邮件信息
             for (int i = 1; i < mailNum + 1; i++) {//依次打印出邮件的内容
                 System.out.println("以下为第" + i + "封邮件的内容");
@@ -276,36 +276,33 @@ public class Pop3Controller {
 
 
     public void handleContent(List<String> content) {
-        //决定当前行是否解码
-        boolean decodeWithBase64 = false;
-        //排除前一行的干扰
-        boolean isPreLine = false;
-        //是否已经收集完内容  不要html
         boolean isBody = false;
         boolean isPart = false;
-        boolean hasContent = false;
         String body = "";
         String rawBody = "";
-        String contentType = "";
-        String boundary = "";
-        HashMap<String, String> email = new HashMap<>();
+        //String contentType = "";
+        //String boundary = "";
+        EmailInfo email = new EmailInfo();
+        List<SubContentInfo> subContents = new ArrayList<>();
         for (int i = 0; i < content.size(); i++) {
 
             String buf = content.get(i);
             if(isBody){
+
+                if(buf.equals("--"+email.getBoundary()+"--")){
+                    break;
+                }
                 //如果是text类型
-                if(boundary.length()==0){
+                if(email.getContentType().contains("text")){
                     if(buf.equals(".")){
                         rawBody.replaceAll("(\\n|\\r\\n|\\n\\r)","");
-                        body = convert(rawBody);
-                        if(contentType.contains("html")){
-                            body = body.replaceAll("</?[^>]+>", "");
+                        body = convert(rawBody,charset,encoding);
+                        if(email.getContentType().contains("html")){
+                            body = body.replaceAll("<.*>", "");
                         }
 
-                        System.out.println("bofy:"+body);
-                        isPart = false;
-                        isBody = false;
-                        return;
+                        //System.out.println("body:"+body);
+                        break;
                     }else{
                         rawBody += buf;
                         continue;
@@ -314,97 +311,150 @@ public class Pop3Controller {
 
                 }else{
 
-                    if(buf.equals("--"+boundary)){
+                    //不是text类型，是multipart类型
+                    //如果当前行是boundary，说明子内容开始
+                    if(buf.equals("--"+email.getBoundary())){
                         isPart = true;
                     }else if(isPart!=true){
                         continue;
                     }
 
-                    String type = "";
-                    String charset = "";
-                    String encoding = "";
-                    String part = "";
+
+                    SubContentInfo subContent= new SubContentInfo();
+                    String partContent = "";
+                    String attachment = "";  //附件内容
+
                     i++;
                     buf = content.get(i);
-                    String regex = ": (.*); charset=(.*)";
-                    Pattern p = Pattern.compile(regex);
-                    Matcher m = p.matcher(buf);
-                    if (m.find()) {
-                        type = m.group(1);
-                        charset = m.group(2);
-                        System.out.println("type:"+type+";charset:"+charset);
-                    }
-                    String regex1 = "Content-Transfer-Encoding: (.*)";
-                    Pattern p1 = Pattern.compile(regex1);
-                    i++;
-                    buf = content.get(i);
-                    Matcher m1 = p1.matcher(buf);
-                    if(m1.find()){
-                        encoding = m1.group(1);
-                        System.out.println("encoding:"+encoding);
-                        if(encoding.equals("base64")){
-                            isBase64 = true;
-                            isQP= false;
-                        }else {
-                            isBase64 = false;
-                            isQP = true;
-                        }
 
-                    }
-                    //包含附件
-                    if(contentType.contains("mixed")){
-
-                        if(type.contains("octet-stream")){
-                            //附件
-                        }else{
-
-                        }
-                    }else if(contentType.contains("alternative")){
-                        //包含超文本，只需提取纯文本
-                        if(type.contains("plain")){
-
-                            while(buf.length()!=0){
-                                i++;
-                                buf = content.get(i);
-                            }
+                    //子内容有可能为空
+                    if(buf.length()==0){
+                        while(!buf.contains(email.getBoundary())){
                             i++;
-                            buf = content.get(i);  //这部分内容的第一行
-                            System.out.println("the first line:"+buf);
+                            buf = content.get(i);
+                        }
+                        isPart = false;
+                        continue;
+                    }
 
-                            while(!buf.contains(boundary)){
-                                part += buf;
-                                i++;
-                                buf = content.get(i);
-                            }
-                            isPart = false;
-                            part.replaceAll("(\\n|\\r\\n|\\n\\r)","");
-                            System.out.println(part);
-                            part = convert(part);
-                            body += part;
-                            System.out.println(part);
+                    String regex1 = "Content-Type: (.*);";
+                    Pattern p1 = Pattern.compile(regex1);
+                    Matcher m1 = p1.matcher(buf);
+                    if (m1.find()) {
+                        //type = m1.group(1);
+                        subContent.setContentType(m1.group(1));
+                        System.out.println("type:"+subContent.getContentType());
+                    }else{
+                        break;
+                    }
 
+                    if(!subContent.getContentType().contains("image")){
+                        //找到该子内容的字符集
+                        String regex2 = "charset=(.*)";
+                        Pattern p2 = Pattern.compile(regex2);
+                        Matcher m2 = p2.matcher(buf);
+                        if(m2.find()){
+                            //charset = m2.group(1);
+                            subContent.setCharset(m2.group(1).replace("\"",""));
                         }else{
-                            return;
+                            i++;
+                            buf = content.get(i);
+                            m2 = p2.matcher(buf);
+                            if(m2.find())
+                                subContent.setCharset(m2.group(1).replace("\"",""));
                         }
 
-
-                    }else if(contentType.contains("related")){
-                        //包含内嵌资源
+                        System.out.println(subContent.getCharset());
+                        i++;
+                        buf = content.get(i);
                     }
 
 
 
+                    //附件
+                    if(subContent.getContentType().contains("octet-stream")||subContent.getContentType().contains("image")){
+
+                        String regex3 = "name=(.*)";
+                        Pattern p3 = Pattern.compile(regex3);
+                        Matcher m3 = p3.matcher(buf);
+                        if(m3.find()){
+                            //filename = m3.group(1);
+                            subContent.setFilename(m3.group(1).replace("\"",""));
+                        }
+                        i++;
+                        buf = content.get(i);
+                        while(!buf.startsWith("Content-Transfer-Encoding")){
+                            i++;
+                            buf = content.get(i);
+                        }
+
+                        subContent.setEncoding(buf.substring(27));
+                        System.out.println("Content-Transfer-Encoding:"+subContent.getEncoding());
+                        i = i + 2;  //跳过空行
+                        buf = content.get(i);
+                        StringBuilder sb = new StringBuilder();
+                        while(!buf.contains(email.getBoundary())){
+                            sb.append(buf);
+                            //attachment += buf;
+                            i++;
+                            buf = content.get(i);
+                        }
+                        attachment = sb.toString();
+                        attachment = attachment.replaceAll("(\\n|\\r\\n|\\n\\r)","").replaceAll("\\s*", "");
+                        attachment = convert(attachment,null,subContent.getEncoding());
+                        subContent.setAttachment(attachment);
+                        System.out.println("附件："+subContent.getAttachment());
+                        SaveFile(subContent.getAttachment().getBytes(),"D:\\学习",subContent.getFilename());
+
+                    }else if(subContent.getContentType().contains("plain")||(subContents.size()!=0&&(subContents.get(0).getSubContent()).contains("Please view this mail in HTML format."))){
+
+                        while(!buf.startsWith("Content-Transfer-Encoding")){
+                            i++;
+                            buf = content.get(i);
+                        }
+                        subContent.setEncoding(buf.substring(27));
+                        System.out.println("Content-Transfer-Encoding:"+subContent.getEncoding());
+
+                        while(buf.length()!=0){
+                            i++;
+                            buf = content.get(i);
+                        }
+                        i++;
+                        buf = content.get(i);  //这部分内容的第一行
+
+                        StringBuilder sb = new StringBuilder();
+                        while(!buf.contains(email.getBoundary())){
+                            sb.append(buf);
+                            i++;
+                            buf = content.get(i);
+                        }
+                        isPart = false;
+                        partContent = sb.toString();
+                        partContent.replaceAll("(\\n|\\r\\n|\\n\\r)","");
+                        //System.out.println(partContent);
+
+                        System.out.println("charset="+subContent.getCharset()+";encoding="+subContent.getEncoding());
+
+                        partContent = convert(partContent, subContent.getCharset(),subContent.getEncoding());
+
+                        subContent.setSubContent(partContent);
+
+                    }
+
+                    i--;
+
+                    subContents.add(subContent);
 
                 }
 
-                //System.out.println("buf:"+buf);
-                //System.out.println("rawbody:"+rawBody);
+                email.setSubContents(subContents);
 
             } else if (buf.startsWith("Subject:")) {
                 String subject = convertToChinese(buf);
                 //如果是英文，从Subject:后开始截取即可
                 if (subject==null) subject = buf.substring(8);
-                email.put("subject:", subject);
+                //email.put("subject:", subject);
+                email.setSubject(subject);
                 System.out.println("subject:"+subject);
             } else if (buf.startsWith("From:")) {
                 String from = convertToChinese(buf);
@@ -417,48 +467,59 @@ public class Pop3Controller {
                     if (m.find())
                         from += m.group(1);
                 }
-                email.put("from:", from);
+                //email.put("from:", from);
+                email.setFrom(from);
                 System.out.println("from:"+from);
             }else if (buf.startsWith("Date:")) {
-                email.put("date", buf.substring(5));
+                //email.put("date", buf.substring(5));
+                email.setDate(buf.substring(5));
                 System.out.println("date:"+buf.substring(5));
             } else if (buf.startsWith("Content-Type:")) {
                 //Content-Type: text/plain; charset=UTF-8
                 //要根据Content-Type来提取这一段的内容
-                String emailBody = null;
+                //String emailBody = null;
                 //String charset = null;
-                String encoding = null;
+                //String encoding = null;
                 String regex1 = ": (.*);";
                 Pattern p1 = Pattern.compile(regex1);
                 Matcher m1 = p1.matcher(buf);
                 if (m1.find())
-                    email.put("content-type", contentType = m1.group(1));
-                System.out.println("content-type:"+contentType);
+                    email.setContentType(m1.group(1));
+                System.out.println("content-type:"+email.getContentType());
                 //如果是multipart类型，提取boundary
-                if(contentType.contains("multipart")){
+                if(email.getContentType().contains("multipart")){
                     String regex = "(?<=\").*?(?=\")";
                     Pattern p = Pattern.compile(regex);
                     Matcher m = p.matcher(buf);
                     if(m.find()){
-                        boundary = m.group(0);
+                        email.setBoundary(m.group(0));
                     } else{
                         buf = content.get(++i);
                         m = p.matcher(buf);
                         if(m.find())
-                            boundary = m.group(0);
+                            email.setBoundary(m.group(0));
                     }
-                    System.out.println("boundary:"+boundary);
+                    System.out.println("boundary:"+email.getBoundary());
                 }
 
             }else if(buf.length()==0){
                 //如果这是一个空行
-                System.out.println("邮件内容开始");
                 isBody = true;
                 continue;
             }
 
         }
-        email.put("body:", body);
+        //email.put("body:", body);
+        if(subContents.size()!=0){
+
+            Iterator iterator = subContents.iterator();
+            while(iterator.hasNext()){
+                body += ((SubContentInfo)iterator.next()).getSubContent();
+            }
+
+        }
+
+        email.setContent(body);
         System.out.println("邮件内容：" + body);
     }
 
@@ -486,13 +547,11 @@ public class Pop3Controller {
         //Matcher m2 = p2.matcher(s);
 
         if(s.contains("GBK")){
-            isGBK = true;
-            isUTF8 = false;
+            charset = "GBK";
         }
 
         if(s.contains("UTF-8")){
-            isGBK = false;
-            isUTF8 = true;
+            charset = "UTF-8";
         }
 
 
@@ -503,75 +562,81 @@ public class Pop3Controller {
         Matcher m1 = p1.matcher(s);
         Matcher m2 = p2.matcher(s);
 
-        if (isGBK) {
+        if (charset.equals("GBK")) {
             //=?GBK=?B?=
             if(m1.find()){
-                isBase64 = true;
+                encoding = "base64";
                 try{
                     byte[] b = Base64.getDecoder().decode(m1.group(1));
                     result = new String(b, "GBK");
                 }catch (UnsupportedEncodingException e){
-                    System.out.println(e.getMessage());
+                    //System.out.println(e.getMessage());
                 }
             }else if(m2.find()){
-                isQP = true;
+                encoding = "quoted-printable";
                 result = QuotedPrintable.decode(m2.group(1).getBytes(),"GBK");
             }
 
-        }else if(isUTF8){
+        }else if(charset.equals("UTF-8")){
             if(m1.find()){
-                isBase64 = true;
+                encoding = "base64";
                 try{
                     byte[] b = Base64.getDecoder().decode(m1.group(1));
                     result = new String(b, "UTF-8");
                 }catch (UnsupportedEncodingException e){
-                    System.out.println(e.getMessage());
+                    //System.out.println(e.getMessage());
                 }
             }else if(m2.find()){
-                isQP = true;
+                encoding = "quoted-printable";
                 result = QuotedPrintable.decode(m2.group(1).getBytes(),"UTF-8");
             }
         }
-        System.out.println(result);
+        //System.out.println(result);
         return result;
     }
 
-    public String convert(String s){
+    public String convert(String s,String charset,String encoding){
         String result = "";
-        if(isGBK){
-            if(isBase64){
+        if(charset==null){
+            System.out.println("charset:"+charset);
+            if(encoding.equals("base64")){
+                byte[] b = Base64.getDecoder().decode(s);
+                System.out.println("文件信息："+b);
+                result = b.toString();
+            }else{
+                //result = QuotedPrintable.decode(s.getBytes());
+            }
+
+        }else if(charset.equals("GBK")){
+            if(encoding.equals("base64")){
                 try{
                     byte[] b = Base64.getDecoder().decode(s);
                     result = new String(b, "GBK");
                 }catch (UnsupportedEncodingException e){
-                    System.out.println(e.getMessage());
+                    //System.out.println(e.getMessage());
                 }
-            }else if(isQP){
-                result = QuotedPrintable.decode(s.getBytes(),"GBK");
             }else{
-                System.out.println("未知或者不是base64和qp！");
+                result = QuotedPrintable.decode(s.getBytes(),"GBK");
             }
-        }else if(isUTF8){
-            if(isBase64){
+
+        }else if(charset.equals("UTF-8")){
+            if(encoding.equals("base64")){
                 try{
                     byte[] b = Base64.getDecoder().decode(s);
                     result = new String(b, "UTF-8");
                 }catch (UnsupportedEncodingException e){
-                    System.out.println(e.getMessage());
+                    //System.out.println(e.getMessage());
                 }
-            }else if(isQP){
-                result = QuotedPrintable.decode(s.getBytes(),"UTF-8");
             }else{
-                System.out.println("未知或者不是base64和qp！");
+                result = QuotedPrintable.decode(s.getBytes(),"UTF-8");
             }
-        }else{
-            System.out.println("未知或者不是gbk和utf8！");
         }
         return result;
     }
 
     //退出
-    public void quit(BufferedReader in,BufferedWriter out) throws IOException{
+    public void
+    quit(BufferedReader in,BufferedWriter out) throws IOException{
         String result = null;
         try{
             result = getResult(sendServer("QUIT", in, out));

@@ -1,6 +1,9 @@
 package com.example.email.util;
 
+import java.util.ArrayList;
 import java.util.Map;
+
+import com.example.email.model.EmailInfo;
 import com.example.email.model.ResultModel;
 
 public class ResultTools {
@@ -19,17 +22,17 @@ public class ResultTools {
     /**
      * @param Errcode--返回码
      * @param Errmsg---404服务器内部异常时提示消息(返回码不是404时传空即可)
-     * @param map------数据源
+     * @param data------数据源
      * @return
      */
-    public static ResultModel result(int Errcode, String Errmsg, Map<String, Object> map) {
+    public static ResultModel result(int Errcode, String Errmsg, ArrayList<EmailInfo> data) {
         ResultModel model = new ResultModel();
         model.setErrcode(Errcode);
         switch (Errcode) {
             case 200:
                 model.setErrmsg("成功");
-                if (map != null) {
-                    model.setData(map);
+                if (data != null) {
+                    model.setData(data);
                 }
                 break;
             case 1001:

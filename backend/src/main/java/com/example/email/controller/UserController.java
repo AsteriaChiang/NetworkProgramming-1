@@ -19,7 +19,7 @@ public class UserController {
 
     @Autowired
     private UserMapper userMapper;
-
+/*
     @RequestMapping(value = {"/selectUserByAll"}, method = RequestMethod.GET)
     public ResultModel selectUserByAll() {
         try {
@@ -39,9 +39,9 @@ public class UserController {
                 return ResultTools.result(1001, "", null);
             }
             List<UserInfo> userLs = userMapper.selectUserByName(name);
-            Map<String, Object> map = new HashMap<String, Object>();
-            map.put("content", userLs);
-            return ResultTools.result(200, "", map);
+            //Map<String, Object> map = new HashMap<String, Object>();
+            //map.put("content", userLs);
+            return ResultTools.result(200, "", userLs);
         } catch (Exception e) {
             return ResultTools.result(404, e.getMessage(), null);
         }
@@ -60,6 +60,6 @@ public class UserController {
         } catch (Exception e) {
             return ResultTools.result(404, e.getMessage(), null);
         }
-    }
+    }*/
 
 }

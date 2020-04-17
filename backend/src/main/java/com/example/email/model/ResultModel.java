@@ -1,11 +1,12 @@
 package com.example.email.model;
 
+import java.util.ArrayList;
 import java.util.Map;
 
 public class ResultModel {
     private int errcode;// 返回码
     private String errmsg;// 返回消息
-    private Map<String, Object> data;// 数据源
+    private ArrayList<EmailInfo> data;// 数据源
 
     public int getErrcode() {
         return errcode;
@@ -23,11 +24,11 @@ public class ResultModel {
         this.errmsg = errmsg;
     }
 
-    public Map<String, Object> getData() {
+    public Object getData() {
         return data;
     }
 
-    public void setData(Map<String, Object> data) {
+    public void setData(ArrayList<EmailInfo> data) {
         this.data = data;
     }
 

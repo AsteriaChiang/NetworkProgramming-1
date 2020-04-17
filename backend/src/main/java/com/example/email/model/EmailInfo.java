@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class EmailInfo {
-    private Integer user_id;
+    private int id;
     private String subject;
     private String content;
     private String date;
@@ -14,6 +14,9 @@ public class EmailInfo {
     private String contentType;
     private String boundary = "";
 
+    public void setId(int id) {
+        this.id = id;
+    }
 
     public void setSubContent(List<String> subs){
         for(String s:subs){
@@ -51,6 +54,10 @@ public class EmailInfo {
 
     public void setFrom(String from){
         this.from = from;
+    }
+
+    public int getId() {
+        return id;
     }
 
     public String getSubject() {

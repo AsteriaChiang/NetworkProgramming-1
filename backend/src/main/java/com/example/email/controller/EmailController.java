@@ -17,7 +17,7 @@ public class EmailController {
 
     @Autowired
     private EmailMapper emailMapper;
-
+/*
     @RequestMapping(value = {"/selectEmailByUserid"}, method = RequestMethod.GET)
     public ResultModel selectEmailByUserid(Integer id){
         try {
@@ -40,12 +40,12 @@ public class EmailController {
                 return ResultTools.result(1001, "", null);
             }
             List<EmailInfo> emails = emailMapper.selectEmailByKeyword(id,"%"+keyword+"%");
-            Map<String, Object> map = new HashMap<String, Object>();
-            map.put("content", emails);
-            return ResultTools.result(200, "", map);
+            //Map<String, Object> map = new HashMap<String, Object>();
+            //map.put("content", emails);
+            return ResultTools.result(200, "", emails);
         } catch (Exception e) {
             return ResultTools.result(404, e.getMessage(), null);
         }
     }
-
+*/
 }

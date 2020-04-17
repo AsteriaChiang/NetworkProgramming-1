@@ -5,8 +5,8 @@ import com.example.email.model.ResultModel;
 import com.example.email.model.SubContentInfo;
 import com.example.email.util.ResultTools;
 import com.example.email.util.QuotedPrintable;
-import org.apache.catalina.valves.rewrite.QuotedStringTokenizer;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
@@ -28,6 +28,7 @@ public class Pop3Controller {
     private String userMail = null;
     private String userPwd = null;
     private String mailServer = null;
+    private ArrayList<EmailInfo> emails = new ArrayList<>();
     private String charset = "";
     private String encoding = "";
 
@@ -49,10 +50,10 @@ public class Pop3Controller {
             in=new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out=new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
 
-            if(!user(userMail,in,out))
+            if(!user(userMail))
                 return ResultTools.result(404, "用户名错误", null);
 
-            if(!pass(userPwd,in,out))
+            if(!pass(userPwd))
                 return ResultTools.result(404, "密码错误", null);
 
         }catch (IOException e){
@@ -64,54 +65,122 @@ public class Pop3Controller {
 
     @RequestMapping(value="/receiveEmail")
     public ResultModel receiveMail(HttpServletRequest request){
+        //清空emails列表
+        emails.clear();
         int mailNum = 0;
         if(socket == null)
             return ResultTools.result(404, "尚未进行认证！", null);
 
         try {
-            mailNum = stat(in,out);
+            mailNum = stat();
             System.out.println("stat 命令执行完毕！");
             //list(in,out);
             //System.out.println("list 命令执行完毕！");
             //获取全部邮件信息
             for (int i = 1; i < mailNum + 1; i++) {//依次打印出邮件的内容
                 System.out.println("以下为第" + i + "封邮件的内容");
-                retr(i,in,out);
+                EmailInfo email = retr(i);
+                emails.add(email);
             }
             System.out.println("retr 命令执行完毕！");
-            quit(in,out);
-            System.out.println("quit 命令执行完毕！");
+            //quit(in,out);
+            //System.out.println("quit 命令执行完毕！");
         }catch(IOException e){
             return ResultTools.result(404, e.getMessage(), null);
         }
-        return ResultTools.result(200, "", null);
+        return ResultTools.result(200, "", emails);
     }
 
     @RequestMapping(value = "/deleteMail")
-    public ResultModel receiveMail(int id) {
-        String result = getResult(getReturn(in));
+    public ResultModel deleteMail(@RequestParam("id") String id) {
+        String result = null;
+        // 接收包含stuId的字符串，并将它分割成字符串数组
+        String[] idList = id.split(",");
+        for(String i : idList){
+            //写入dele命令
+            try{
+                result = getResult(sendServer("dele "+i));
+            }catch (IOException e){
+                System.out.println(e.getMessage());
+            }
 
-        //先检测连接服务器是否已经成功
-        if(!"+OK".equals(result)){
-            System.out.println("服务器连接失败！");
-        }
-        //写入dele命令
-        try{
-            result = getResult(sendServer("dele "+id, in, out));
-        }catch (IOException e){
-            System.out.println(e.getMessage());
-        }
-
-        if(!"+OK".equals(result)){
-            System.out.println("删除失败！");
-            return ResultTools.result(404, "删除失败！", null);
+            if(!"+OK".equals(result)){
+                System.out.println("删除失败！");
+                return ResultTools.result(404, "第"+i+"封邮件删除失败！", null);
+            }
         }
         return ResultTools.result(200, "删除成功！", null);
     }
 
+    //退出
+    @RequestMapping(value = "/quit")
+    public void quit() throws IOException{
+        String result = null;
+        try{
+            result = getResult(sendServer("QUIT"));
+        }catch (IOException e){
+            System.out.println("quit命令出错！");
+        }
+        if(!"+OK".equals(result)){
+            throw new IOException("未能正确退出");
+        }
+        if (in != null) {
+            try {
+                in.close();
+            } catch (IOException e) {
+            }
+        }
+        if (out != null) {
+            try {
+                out.close();
+            } catch (IOException e) {
+            }
+        }
+        if (socket != null) {
+            try {
+                socket.close();
+            } catch (IOException e) {
+            }
+        }
+    }
 
-            //得到服务器返回的一行命令
-   public String getReturn(BufferedReader in){
+    @RequestMapping(value = "/saveFile")
+    public static synchronized ResultModel saveFile(@RequestParam(value = "attachment") String base64, @RequestParam(value = "path") String path) {
+        if (base64 == null && path == null) {
+            return new ResultTools().result(400,"缺失文件参数",null);
+        }
+
+        File saveFile = new File(path);
+        try {
+            saveFile.createNewFile();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        FileOutputStream fileOutputStream = null;
+        try {
+            fileOutputStream = new FileOutputStream(saveFile);
+            fileOutputStream.write(Base64.getDecoder().decode(base64));
+            fileOutputStream.flush();
+            return new ResultTools().result(200,"下载成功",null);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+            return new ResultTools().result(400,e.getMessage(),null);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return new ResultTools().result(400,e.getMessage(),null);
+        } finally {
+            if (fileOutputStream != null) {
+                try {
+                    fileOutputStream.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    //得到服务器返回的一行命令
+   public String getReturn(){
         String line="";
         try{
             line=in.readLine();
@@ -133,17 +202,17 @@ public class Pop3Controller {
     }
 
     //发送命令
-    private String sendServer(String str,BufferedReader in,BufferedWriter out) throws IOException{
+    private String sendServer(String str) throws IOException{
         out.write(str);//发送命令
         out.newLine();//发送空行
         out.flush();//清空缓冲区
         System.out.println("已发送命令:"+str);
-        return getReturn(in);
+        return getReturn();
     }
 
     //user命令
-    public boolean user(String user,BufferedReader in,BufferedWriter out){
-        String result = getResult(getReturn(in));
+    public boolean user(String user){
+        String result = getResult(getReturn());
 
         //先检测连接服务器是否已经成功
         if(!"+OK".equals(result)){
@@ -153,7 +222,7 @@ public class Pop3Controller {
 
         //写入user命令
         try{
-            result = getResult(sendServer("user "+user,in,out));
+            result = getResult(sendServer("user "+user));
         }catch (IOException e){
             System.out.println(e.getMessage());
             return false;
@@ -169,10 +238,10 @@ public class Pop3Controller {
 
 
     //pass命令
-    public boolean pass(String password,BufferedReader in,BufferedWriter out){
+    public boolean pass(String password){
         String result = null;
         try{
-            result = getResult(sendServer("pass "+password,in,out));
+            result = getResult(sendServer("pass "+password));
         }catch (IOException e){
             System.out.println(e.getMessage());
             return false;
@@ -187,10 +256,10 @@ public class Pop3Controller {
 
     //stat命令
     //请求服务器发回关于邮箱的统计资料，如邮件总数和总字节数
-    public int stat(BufferedReader in,BufferedWriter out)throws IOException{
+    public int stat()throws IOException{
         if(socket.isClosed())
             System.out.println("已断开连接");
-        String line = sendServer("stat",in,out);
+        String line = sendServer("stat");
         StringTokenizer st = new StringTokenizer(line," ");
         String result = st.nextToken();
         int mailNum = 0;
@@ -206,8 +275,8 @@ public class Pop3Controller {
 
     //无参数list命令
     //返回邮件的编号和邮件的字节数
-    public void list(BufferedReader in,BufferedWriter out) throws IOException{
-        String line = sendServer("list",in,out);
+    public void list() throws IOException{
+        String line = sendServer("list");
         while(!".".equalsIgnoreCase(line)){
             line = in.readLine();
             System.out.println(line);
@@ -216,7 +285,8 @@ public class Pop3Controller {
 
     //retr命令
     //得到邮件的完整信息
-    public void retr(int mailNum,BufferedReader in,BufferedWriter out){
+    public EmailInfo retr(int mailNum){
+        EmailInfo email = new EmailInfo();
         if(socket.isClosed()){
             try{
                 socket = new Socket(mailServer,110);//在新建socket的时候就已经与服务器建立了连接
@@ -227,8 +297,8 @@ public class Pop3Controller {
                 in=new BufferedReader(new InputStreamReader(socket.getInputStream()));
                 out=new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
 
-                user(userMail,in,out);
-                pass(userPwd,in,out);
+                user(userMail);
+                pass(userPwd);
 
             }catch (IOException e){
                 System.out.println(e.getMessage());
@@ -237,7 +307,7 @@ public class Pop3Controller {
         String result = null;
         List<String> content = new ArrayList<>();
         try{
-            result = getResult(sendServer("retr "+ mailNum, in, out));
+            result = getResult(sendServer("retr "+ mailNum));
         }catch (IOException e){
             System.out.println("retr命令出错！");
         }
@@ -264,18 +334,18 @@ public class Pop3Controller {
                 }
             }
             if(content!=null){
-                handleContent(content);
+                email = handleContent(mailNum,content);
             }
         }catch (IOException e){
             System.out.println(e.getMessage());
         }
 
-
+        return email;
     }
 
 
 
-    public void handleContent(List<String> content) {
+    public EmailInfo handleContent(int mailNum, List<String> content) {
         boolean isBody = false;
         boolean isPart = false;
         String body = "";
@@ -283,6 +353,7 @@ public class Pop3Controller {
         //String contentType = "";
         //String boundary = "";
         EmailInfo email = new EmailInfo();
+        email.setId(mailNum);
         List<SubContentInfo> subContents = new ArrayList<>();
         for (int i = 0; i < content.size(); i++) {
 
@@ -348,7 +419,8 @@ public class Pop3Controller {
                         break;
                     }
 
-                    if(!subContent.getContentType().contains("image")){
+
+                    if(subContent.getContentType().contains("text")){
                         //找到该子内容的字符集
                         String regex2 = "charset=(.*)";
                         Pattern p2 = Pattern.compile(regex2);
@@ -363,23 +435,40 @@ public class Pop3Controller {
                             if(m2.find())
                                 subContent.setCharset(m2.group(1).replace("\"",""));
                         }
-
-                        System.out.println(subContent.getCharset());
-                        i++;
-                        buf = content.get(i);
+                        if(subContent.getCharset()!=null){
+                            i++;
+                            buf = content.get(i);
+                        }
                     }
 
 
 
                     //附件
-                    if(subContent.getContentType().contains("octet-stream")||subContent.getContentType().contains("image")){
+                    if((subContent.getCharset()==null&&subContent.getContentType().contains("text"))||subContent.getContentType().contains("image")||subContent.getContentType().contains("application")){
 
-                        String regex3 = "name=(.*)";
+                        while(!buf.equals("")){
+                            if(buf.startsWith("Content-Transfer-Encoding")){
+                                subContent.setEncoding(buf.substring(27));
+                            }else if(buf.contains("filename")){
+                                String regex3 = "filename=(.*)";
+                                Pattern p3 = Pattern.compile(regex3);
+                                Matcher m3 = p3.matcher(buf);
+                                if(m3.find()){
+                                    //filename = m3.group(1);
+                                    subContent.setFilename(convertToChinese(m3.group(1).replace("\"","")));
+                                    System.out.println("filename="+subContent.getFilename());
+                                }
+                            }
+                            i++;
+                            buf = content.get(i);
+                        }
+
+                        /*String regex3 = "name=(.*)";
                         Pattern p3 = Pattern.compile(regex3);
                         Matcher m3 = p3.matcher(buf);
                         if(m3.find()){
                             //filename = m3.group(1);
-                            subContent.setFilename(m3.group(1).replace("\"",""));
+                            subContent.setFilename(convertToChinese(m3.group(1).replace("\"","")));
                         }
                         i++;
                         buf = content.get(i);
@@ -391,20 +480,19 @@ public class Pop3Controller {
                         subContent.setEncoding(buf.substring(27));
                         System.out.println("Content-Transfer-Encoding:"+subContent.getEncoding());
                         i = i + 2;  //跳过空行
+                        buf = content.get(i);*/
+
+                        i++;  //跳过空行
                         buf = content.get(i);
                         StringBuilder sb = new StringBuilder();
-                        while(!buf.contains(email.getBoundary())){
+                        while(!buf.equals("")&&!buf.contains(email.getBoundary())){
                             sb.append(buf);
                             //attachment += buf;
                             i++;
                             buf = content.get(i);
                         }
-                        attachment = sb.toString();
-                        attachment = attachment.replaceAll("(\\n|\\r\\n|\\n\\r)","").replaceAll("\\s*", "");
-                        attachment = convert(attachment,null,subContent.getEncoding());
+                        attachment = sb.toString().replaceAll("(\\n|\\r\\n|\\n\\r)","");
                         subContent.setAttachment(attachment);
-                        System.out.println("附件："+subContent.getAttachment());
-                        SaveFile(subContent.getAttachment().getBytes(),"D:\\学习",subContent.getFilename());
 
                     }else if(subContent.getContentType().contains("plain")||(subContents.size()!=0&&(subContents.get(0).getSubContent()).contains("Please view this mail in HTML format."))){
 
@@ -414,6 +502,8 @@ public class Pop3Controller {
                         }
                         subContent.setEncoding(buf.substring(27));
                         System.out.println("Content-Transfer-Encoding:"+subContent.getEncoding());
+
+
 
                         while(buf.length()!=0){
                             i++;
@@ -432,6 +522,7 @@ public class Pop3Controller {
                         partContent = sb.toString();
                         partContent.replaceAll("(\\n|\\r\\n|\\n\\r)","");
                         //System.out.println(partContent);
+
 
                         System.out.println("charset="+subContent.getCharset()+";encoding="+subContent.getEncoding());
 
@@ -521,6 +612,7 @@ public class Pop3Controller {
 
         email.setContent(body);
         System.out.println("邮件内容：" + body);
+        return email;
     }
 
 
@@ -548,10 +640,11 @@ public class Pop3Controller {
 
         if(s.contains("GBK")){
             charset = "GBK";
-        }
-
-        if(s.contains("UTF-8")){
+        }else if(s.contains("UTF-8")){
             charset = "UTF-8";
+        }else{
+            //不是中文的
+            return s;
         }
 
 
@@ -634,66 +727,5 @@ public class Pop3Controller {
         return result;
     }
 
-    //退出
-    public void
-    quit(BufferedReader in,BufferedWriter out) throws IOException{
-        String result = null;
-        try{
-            result = getResult(sendServer("QUIT", in, out));
-        }catch (IOException e){
-            System.out.println("quit命令出错！");
-        }
-        if(!"+OK".equals(result)){
-            throw new IOException("未能正确退出");
-        }
-        if (in != null) {
-            try {
-                in.close();
-            } catch (IOException e) {
-            }
-        }
-        if (out != null) {
-            try {
-                out.close();
-            } catch (IOException e) {
-            }
-        }
-        if (socket != null) {
-            try {
-                socket.close();
-            } catch (IOException e) {
-            }
-        }
-    }
 
-    @RequestMapping(value = "/saveFile")
-    public static synchronized boolean SaveFile(byte[] Data, String Path, String FileName) {
-        File saveFile = new File(Path, FileName);
-        try {
-            saveFile.createNewFile();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        FileOutputStream fileOutputStream = null;
-        try {
-            fileOutputStream = new FileOutputStream(saveFile);
-            fileOutputStream.write(Data);
-            fileOutputStream.flush();
-            return true;
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-            return false;
-        } catch (IOException e) {
-            e.printStackTrace();
-            return false;
-        } finally {
-            if (fileOutputStream != null) {
-                try {
-                    fileOutputStream.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-    }
 }

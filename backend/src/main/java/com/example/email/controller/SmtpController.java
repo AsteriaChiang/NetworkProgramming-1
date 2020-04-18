@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.RestController;
 import javax.servlet.http.HttpServletRequest;
 import java.io.*;
 import java.net.Socket;
-import java.text.SimpleDateFormat;
 import java.util.*;
 
 
@@ -26,9 +25,8 @@ public class SmtpController {
     private String bcc = null;
     private String mailSubject = null;
     private String mailContent = null;
-    private List<String> attachList=new ArrayList<String>();;
+    private String attachFile=null;
     private static Map<String, String> attachTypeMap;
-    private String datePattern=null;
 
     private BufferedReader in = null;
     private DataOutputStream out = null;
@@ -64,28 +62,14 @@ public class SmtpController {
 
     }
 
-    @GetMapping(value = "/sendEmail")
-    public ResultModel sendEmail(HttpServletRequest request) {
-        recipient = "957529483@qq.com,AsteriaChiang@outlook.com";
-                //request.getParameter("recipient");
-        cc = request.getParameter("cc");
-        bcc = request.getParameter("bcc");
-        userMail = "957529483@qq.com";
-                //request.getParameter("userMail");
-        userPwd ="urxztsypbwsebeej";
-                //request.getParameter("userPwd");
-        mailSubject="test subject";
-                //request.getParameter("mailSubject");
-        mailContent="test content";
-                //request.getParameter("mailContent");
-        //datePattern="yyyy-MM-dd HH:mm:ss";
-        attachList.add("/Users/asteriachiang/Desktop/test.docx");
+    @RequestMapping(value = "/auth")
+    public ResultModel authUser(HttpServletRequest request) {
 
-        if(userMail == null || userPwd == null || recipient==null){
-            return ResultTools.result(2001, "", null);
-        }
-
+        userMail = request.getParameter("userMail");
+        userPwd =request.getParameter("userPwd");
         String mailServer = "smtp." + userMail.substring(userMail.lastIndexOf("@") + 1);
+
+        //建立连接
         try{
             client = new Socket(mailServer, 25);
             //IO流
@@ -101,10 +85,36 @@ public class SmtpController {
             getReturn(in);
 
             //name&pwd
-            send(out,new String(encoder.encode(userMail.getBytes())));
-            getReturn(in);
-            send(out,new String(encoder.encode(userPwd.getBytes())));
-            getReturn(in);
+            if(!user(userMail)){
+                return ResultTools.result(404, "用户名错误", null);
+            }
+            if(pass(userPwd)){
+                return ResultTools.result(404, "密码错误", null);
+            }
+
+
+        }catch(Exception e){
+            return ResultTools.result(404, e.getMessage(), null);
+        }
+
+        return ResultTools.result(200, "用户验证成功", null);
+    }
+
+    @GetMapping(value = "/sendEmail")
+    public ResultModel sendEmail(HttpServletRequest request) {
+        recipient = "957529483@qq.com,AsteriaChiang@outlook.com";
+                //request.getParameter("recipient");
+        cc = request.getParameter("cc");
+        bcc = request.getParameter("bcc");
+        mailSubject=request.getParameter("mailSubject");
+        mailContent=request.getParameter("mailContent");
+        attachFile=request.getParameter("attachFile");
+
+        if(userMail == null || userPwd == null || recipient==null){
+            return ResultTools.result(2001, "", null);
+        }
+
+        try{
 
             //receiver
             send(out,"MAIL FROM:<"+userMail+">");
@@ -116,8 +126,10 @@ public class SmtpController {
             //DATA
             send(out,"DATA");
             getReturn(in);
-            send(out, "Subject: "+mailSubject);
-            send(out, "From:<957529483@qq.com>");
+            if(mailSubject!=null){
+                send(out, "Subject: "+mailSubject);
+            }
+            send(out, userMail);
             send(out,"To: <"+recipient+">");
             if(cc!=null){
                 send(out,"Cc: <"+cc+">");
@@ -126,35 +138,57 @@ public class SmtpController {
                 send(out,"Bcc: <"+cc+">");
             }
 
-//            SimpleDateFormat sdf = new SimpleDateFormat(datePattern);
-//            send(out,"Date:"+sdf.format(new Date()));
+
             send(out,"Content-Type: multipart/mixed; boundary=b");
+            send(out,"--b");
             //Text
-            send(out,"--b");
-            send(out,"Content-Type:text/html");
-            send(out,"\r\n");
-            send(out, mailSubject);
-            send(out,"--b");
-
-
-            if(attachList!=null){
-                int attachsize=attachList.size();
-                for(int i=0;i<attachsize;i++){
-                    String filePath=attachList.get(i);
-                    attachment(filePath);
-                }
+            if(mailContent!=null){
+                send(out,"Content-Type:text/html");
+                send(out,"\r\n");
+                send(out, mailContent);
+                send(out,"--b");
             }
-            //attachment("/Users/asteriachiang/Desktop/test.docx");
+
+
+            if(attachFile!=null){
+                    attachment(attachFile);
+            }
 
             send(out, ".");
             send(out,"QUIT");
             client.close();
         }
         catch (Exception e){
-            e.printStackTrace();
+            return ResultTools.result(404, e.getMessage(), null);
         }
 
         return ResultTools.result(200, "发送成功", null);
+    }
+
+    //user命令
+    public boolean user(String user){
+        send(out,new String(encoder.encode(user.getBytes())));
+        String result = getReturn(in);
+
+        if(!"334 UGFzc3dvcmQ6".equals(result)){
+            System.out.println("用户名错误！");
+            return false;
+        }
+
+        return  true;
+    }
+
+
+    //pass命令
+    public boolean pass(String password){
+        send(out,new String(encoder.encode(password.getBytes())));
+        String result = getReturn(in);
+
+        if(!"235 Authentication successful".equals(result)){
+            System.out.println("密码错误！");
+            return false;
+        }
+        return  true;
     }
 
     //送达多个邮箱
@@ -198,7 +232,7 @@ public class SmtpController {
             send(out,"--b");
         }
         catch (Exception e){
-            e.printStackTrace();
+            System.out.println(e.getMessage());
         }
 
     }
@@ -224,19 +258,19 @@ public class SmtpController {
             out.flush();
         }
         catch (Exception e){
-            e.printStackTrace();
+            System.out.println(e.getMessage());
         }
     }
 
     //返回结果
-    public void getReturn(BufferedReader in) {
+    public String getReturn(BufferedReader in) {
         String s="";
         try {
             s = in.readLine();
         }catch (Exception e) {
-            e.printStackTrace();
+            System.out.println(e.getMessage());
         }
-        //return s;
+        return s;
     }
 
 

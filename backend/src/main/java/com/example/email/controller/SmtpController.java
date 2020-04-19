@@ -66,7 +66,8 @@ public class SmtpController {
     public ResultModel authUser(HttpServletRequest request) {
 
         userMail = request.getParameter("userMail");
-        userPwd =request.getParameter("userPwd");
+//        "957529483@qq.com";
+        userPwd = request.getParameter("userPwd");
         String mailServer = "smtp." + userMail.substring(userMail.lastIndexOf("@") + 1);
 
         //建立连接
@@ -88,7 +89,7 @@ public class SmtpController {
             if(!user(userMail)){
                 return ResultTools.result(404, "用户名错误", null);
             }
-            if(pass(userPwd)){
+            if(!pass(userPwd)){
                 return ResultTools.result(404, "密码错误", null);
             }
 
@@ -102,8 +103,8 @@ public class SmtpController {
 
     @GetMapping(value = "/sendEmail")
     public ResultModel sendEmail(HttpServletRequest request) {
-        recipient = "957529483@qq.com,AsteriaChiang@outlook.com";
-                //request.getParameter("recipient");
+        recipient = request.getParameter("recipient");
+//        "957529483@qq.com";
         cc = request.getParameter("cc");
         bcc = request.getParameter("bcc");
         mailSubject=request.getParameter("mailSubject");
@@ -129,10 +130,11 @@ public class SmtpController {
             if(mailSubject!=null){
                 send(out, "Subject: "+mailSubject);
             }
-            send(out, userMail);
+            send(out, "FROM: <"+userMail+">");
             send(out,"To: <"+recipient+">");
             if(cc!=null){
                 send(out,"Cc: <"+cc+">");
+                System.out.println("抄送");
             }
             if(bcc!=null){
                 send(out,"Bcc: <"+cc+">");

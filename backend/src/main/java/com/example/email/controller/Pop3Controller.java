@@ -38,7 +38,6 @@ public class Pop3Controller {
         userMail = request.getParameter("userMail");
         userPwd = request.getParameter("userPwd");
         mailServer = "pop." + userMail.substring(userMail.lastIndexOf("@") + 1);
-
         //建立连接
         try{
             socket = new Socket(mailServer,110);//在新建socket的时候就已经与服务器建立了连接
@@ -77,8 +76,7 @@ public class Pop3Controller {
             //list(in,out);
             //System.out.println("list 命令执行完毕！");
             //获取全部邮件信息
-            for (int i = 1; i < mailNum + 1; i++) {//依次打印出邮件的内容
-                System.out.println("以下为第" + i + "封邮件的内容");
+            for (int i = 1; i < mailNum + 1; i++) {
                 EmailInfo email = retr(i);
                 emails.add(email);
             }
@@ -315,17 +313,13 @@ public class Pop3Controller {
             System.out.println("接收邮件出错！");
         }
         System.out.println("第" + mailNum + "封");
-        StringBuffer emailContent = null;
 
         //解析邮件内容
-        //StringBuilder receive=new StringBuilder();
         String tempStr;
         try {
             while(true)
             {
                 tempStr = in.readLine();
-                //receive.append("\r\n");
-                //receive.append(tempStr);
                 content.add(tempStr);
                 if(tempStr.equals("."))
                 {
@@ -566,11 +560,6 @@ public class Pop3Controller {
                 email.setDate(buf.substring(5));
                 System.out.println("date:"+buf.substring(5));
             } else if (buf.startsWith("Content-Type:")) {
-                //Content-Type: text/plain; charset=UTF-8
-                //要根据Content-Type来提取这一段的内容
-                //String emailBody = null;
-                //String charset = null;
-                //String encoding = null;
                 String regex1 = ": (.*);";
                 Pattern p1 = Pattern.compile(regex1);
                 Matcher m1 = p1.matcher(buf);

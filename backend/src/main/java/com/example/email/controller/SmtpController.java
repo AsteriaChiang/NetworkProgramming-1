@@ -62,30 +62,37 @@ public class SmtpController {
 
     }
 
-    @RequestMapping(value = "/auth")
-    public ResultModel authUser(HttpServletRequest request) {
 
+    @GetMapping(value = "/sendEmail")
+    public ResultModel sendEmail(HttpServletRequest request) {
         userMail = request.getParameter("userMail");
-//        "957529483@qq.com";
         userPwd = request.getParameter("userPwd");
-        String mailServer = "smtp." + userMail.substring(userMail.lastIndexOf("@") + 1);
+        recipient = request.getParameter("recipient");
+        cc = request.getParameter("cc");
+        bcc = request.getParameter("bcc");
+        mailSubject=request.getParameter("mailSubject");
+        mailContent=request.getParameter("mailContent");
+        attachFile=request.getParameter("attachFile");
 
-        //建立连接
+
         try{
-            client = new Socket(mailServer, 25);
+            String mailServer = "smtp." + userMail.substring(userMail.lastIndexOf("@") + 1);
+            client = new Socket(mailServer, 25); //建立连接
+
             //IO流
             in = new BufferedReader(new InputStreamReader(client.getInputStream()));
             out = new DataOutputStream(client.getOutputStream());
-
             getReturn(in);
+
+            //Helo
             send(out,"HELO smtp");
             getReturn(in);
             getReturn(in);
             getReturn(in);
-            send(out,"auth login");
-            getReturn(in);
 
             //name&pwd
+            send(out,"auth login");
+            getReturn(in);
             if(!user(userMail)){
                 return ResultTools.result(404, "用户名错误", null);
             }
@@ -93,31 +100,7 @@ public class SmtpController {
                 return ResultTools.result(404, "密码错误", null);
             }
 
-
-        }catch(Exception e){
-            return ResultTools.result(404, e.getMessage(), null);
-        }
-
-        return ResultTools.result(200, "用户验证成功", null);
-    }
-
-    @GetMapping(value = "/sendEmail")
-    public ResultModel sendEmail(HttpServletRequest request) {
-        recipient = request.getParameter("recipient");
-//        "957529483@qq.com";
-        cc = request.getParameter("cc");
-        bcc = request.getParameter("bcc");
-        mailSubject=request.getParameter("mailSubject");
-        mailContent=request.getParameter("mailContent");
-        attachFile=request.getParameter("attachFile");
-
-        if(userMail == null || userPwd == null || recipient==null){
-            return ResultTools.result(2001, "", null);
-        }
-
-        try{
-
-            //receiver
+            //usermail&recipient&cc&bcc
             send(out,"MAIL FROM:<"+userMail+">");
             getReturn(in);
             splitAddress(recipient);
@@ -127,20 +110,23 @@ public class SmtpController {
             //DATA
             send(out,"DATA");
             getReturn(in);
+            //邮件主题
             if(mailSubject!=null){
                 send(out, "Subject: "+mailSubject);
             }
+            //收件人&发件人
             send(out, "FROM: <"+userMail+">");
             send(out,"To: <"+recipient+">");
+            //密送
             if(cc!=null){
                 send(out,"Cc: <"+cc+">");
                 System.out.println("抄送");
             }
+            //抄送
             if(bcc!=null){
-                send(out,"Bcc: <"+cc+">");
+                send(out,"Bcc: <"+bcc+">");
+                System.out.println("密送");
             }
-
-
             send(out,"Content-Type: multipart/mixed; boundary=b");
             send(out,"--b");
             //Text
@@ -150,8 +136,7 @@ public class SmtpController {
                 send(out, mailContent);
                 send(out,"--b");
             }
-
-
+            //Attachment
             if(attachFile!=null){
                     attachment(attachFile);
             }
@@ -171,12 +156,10 @@ public class SmtpController {
     public boolean user(String user){
         send(out,new String(encoder.encode(user.getBytes())));
         String result = getReturn(in);
-
         if(!"334 UGFzc3dvcmQ6".equals(result)){
             System.out.println("用户名错误！");
             return false;
         }
-
         return  true;
     }
 
@@ -185,7 +168,6 @@ public class SmtpController {
     public boolean pass(String password){
         send(out,new String(encoder.encode(password.getBytes())));
         String result = getReturn(in);
-
         if(!"235 Authentication successful".equals(result)){
             System.out.println("密码错误！");
             return false;
@@ -249,7 +231,6 @@ public class SmtpController {
             }
             fileType = attachTypeMap.get(name);
         }
-
         return fileType;
     }
 

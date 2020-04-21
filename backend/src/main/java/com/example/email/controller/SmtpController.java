@@ -107,14 +107,18 @@ public class SmtpController {
 
             //usermail&recipient&cc&bcc
             send(out,"MAIL FROM:<"+userMail+">");
-            getReturn(in);
+            if(!getReturn(in).startsWith("250")){
+                return ResultTools.result(404, "MAIL FROM命令错误！", null);
+            }
             splitAddress(recipient);
             splitAddress(cc);
             splitAddress(bcc);
 
             //DATA
             send(out,"DATA");
-            getReturn(in);
+            if(!getReturn(in).startsWith("354")){
+                return ResultTools.result(404, "DATA命令错误！", null);
+            }
             //邮件主题
             if(mailSubject!=null){
                 send(out, "Subject: "+mailSubject);
@@ -147,7 +151,13 @@ public class SmtpController {
             }
 
             send(out, ".");
+            if(!getReturn(in).startsWith("250")){
+                return ResultTools.result(404, "未能成功发送！", null);
+            }
             send(out,"QUIT");
+            if(!getReturn(in).startsWith("221")){
+                return ResultTools.result(404, "未能成功退出！", null);
+            }
             client.close();
         }
         catch (Exception e){

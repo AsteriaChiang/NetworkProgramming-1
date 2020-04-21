@@ -85,10 +85,15 @@ public class SmtpController {
             getReturn(in);
 
             //Helo
-            send(out,"HELO smtp");
-            getReturn(in);
-            getReturn(in);
-            getReturn(in);
+            if(mailServer.contains("qq.com")){
+                send(out,"HELO smtp");
+                getReturn(in);
+                getReturn(in);
+                getReturn(in);
+            }else if(mailServer.contains("whu.edu")){
+                send(out,"HELO "+userMail);
+                getReturn(in);
+            }
 
             //name&pwd
             send(out,"auth login");

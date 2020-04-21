@@ -4,7 +4,7 @@ public class SubContentInfo {
     private String contentType;
     private String charset;
     private String encoding;
-    private String subContent;
+    private String subContent = "";
     private String filename;
     private String attachment;
 

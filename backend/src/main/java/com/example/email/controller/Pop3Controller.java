@@ -552,7 +552,9 @@ public class Pop3Controller {
             charset = "GBK";
         }else if(s.contains("UTF-8")){
             charset = "UTF-8";
-        }else{
+        }else if(s.contains("gb18030")){
+            charset = "gb18030";
+        } else{
             //不是中文的
             return s;
         }
@@ -563,7 +565,19 @@ public class Pop3Controller {
         Matcher m1 = p1.matcher(s);
         Matcher m2 = p2.matcher(s);
 
-        if (charset.equals("GBK")) {
+        if(m1.find()){
+            encoding = "base64";
+            try{
+                byte[] b = Base64.getDecoder().decode(m1.group(1));
+                result = new String(b, charset);
+            }catch (UnsupportedEncodingException e){
+            }
+        }else if(m2.find()){
+            encoding = "quoted-printable";
+            result = QuotedPrintable.decode(m2.group(1).getBytes(),charset);
+        }
+
+        /*if (charset.equals("GBK")) {
             //=?GBK=?B?=
             if(m1.find()){
                 encoding = "base64";
@@ -589,7 +603,7 @@ public class Pop3Controller {
                 encoding = "quoted-printable";
                 result = QuotedPrintable.decode(m2.group(1).getBytes(),"UTF-8");
             }
-        }
+        }*/
         return result;
     }
 
@@ -602,23 +616,14 @@ public class Pop3Controller {
                 System.out.println("文件信息："+b);
                 result = b.toString();
             }
-        }else if(charset.equals("GBK")){
+        }else{
             if(encoding.equals("base64")){
                 try{
                     byte[] b = Base64.getDecoder().decode(s);
-                    result = new String(b, "GBK");
+                    result = new String(b, charset);
                 }catch (UnsupportedEncodingException e){ }
             }else{
-                result = QuotedPrintable.decode(s.getBytes(),"GBK");
-            }
-        }else if(charset.equals("UTF-8")){
-            if(encoding.equals("base64")){
-                try{
-                    byte[] b = Base64.getDecoder().decode(s);
-                    result = new String(b, "UTF-8");
-                }catch (UnsupportedEncodingException e){ }
-            }else{
-                result = QuotedPrintable.decode(s.getBytes(),"UTF-8");
+                result = QuotedPrintable.decode(s.getBytes(),charset);
             }
         }
         return result;

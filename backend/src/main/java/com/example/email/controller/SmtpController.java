@@ -121,10 +121,15 @@ public class SmtpController {
             }
             //邮件主题
             if(mailSubject!=null){
+                //如果是中文需要进行base64编码
+                if(isChinese(mailSubject)){
+                    mailSubject = new String(encoder.encode(mailSubject.getBytes("UTF-8")));
+                    mailSubject = "=?UTF-8=?B?"+mailSubject+"?=";
+                }
                 send(out, "Subject: "+mailSubject);
             }
             //收件人&发件人
-            send(out, "FROM: <"+userMail+">");
+            send(out, "From: <"+userMail+">");
             send(out,"To: <"+recipient+">");
             //密送
             if(cc!=null){
@@ -136,18 +141,23 @@ public class SmtpController {
                 send(out,"Bcc: <"+bcc+">");
                 System.out.println("密送");
             }
-            send(out,"Content-Type: multipart/mixed; boundary=b");
-            send(out,"--b");
+            send(out,"Content-Type: multipart/alternative; boundary=\"b\"");
+            send(out,"\r\n");
             //Text
             if(mailContent!=null){
-                send(out,"Content-Type:text/html");
-                send(out,"\r\n");
-                send(out, mailContent);
                 send(out,"--b");
+                send(out,"Content-Type: text/plain; charset=\"UTF-8\"");
+                send(out,"Content-Transfer-Encoding: base64");
+                send(out,"\r\n");
+                send(out, new String(encoder.encode(mailContent.getBytes("UTF-8"))));
+
             }
             //Attachment
             if(attachFile!=null){
-                    attachment(attachFile);
+                send(out,"--b");
+                attachment(attachFile);
+            }else{
+                send(out,"--b--");
             }
 
             send(out, ".");
@@ -190,6 +200,19 @@ public class SmtpController {
         return  true;
     }
 
+    public static boolean isChinese(char c) {
+        return c >= 0x4E00 &&  c <= 0x9FA5;// 根据字节码判断
+    }
+
+    // 判断一个字符串是否含有中文
+    public static boolean isChinese(String str) {
+        if (str == null) return false;
+        for (char c : str.toCharArray()) {
+            if (isChinese(c)) return true;// 有一个中文字符就返回
+        }
+        return false;
+    }
+
     //送达多个邮箱
     public void splitAddress(String addressString){
         if(addressString!=null){
@@ -228,7 +251,7 @@ public class SmtpController {
             send(out,"Content-Transfer-Encoding: base64");
             send(out,"\r\n");
             send(out,new String(encoder.encode(buffer)));
-            send(out,"--b");
+            send(out,"--b--");
         }
         catch (Exception e){
             System.out.println(e.getMessage());

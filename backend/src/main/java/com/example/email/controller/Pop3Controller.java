@@ -467,6 +467,7 @@ public class Pop3Controller {
                         }
                         isPart = false;
                         partContent = sb.toString();
+                        System.out.println(partContent);
                         partContent.replaceAll("(\\n|\\r\\n|\\n\\r)","");
                         partContent = convert(partContent, subContent.getCharset(),subContent.getEncoding());
                         subContent.setSubContent(partContent);
@@ -487,11 +488,11 @@ public class Pop3Controller {
                 if (from==null){
                     from = buf.substring(5);
                 } else {
-                    String regex = "<(.*)>";
+                    String regex = "<.*>";
                     Pattern p = Pattern.compile(regex);
                     Matcher m = p.matcher(buf);
                     if (m.find())
-                        from += m.group(1);
+                        from += m.group(0);
                 }
                 email.setFrom(from);
                 System.out.println("from:"+from);
@@ -556,7 +557,7 @@ public class Pop3Controller {
             charset = "gb18030";
         } else{
             //不是中文的
-            return s;
+            return null;
         }
         String regex1 = "\\?B\\?(.*)\\?=";
         String regex2 = "\\?Q\\?(.*)\\?=";
